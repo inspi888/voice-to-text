@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Голос в текст</title>
+<style>
+  /* ===== ПЕРЕМЕННЫЕ И БАЗОВЫЕ СТИЛИ ===== */
+  :root{
+    --bg: #f6f4ef;
+    --paper: #ffffff;
+    --ink: #2b2a28;
+    --ink-soft: #6f6b63;
+    --accent: #c9704a;
+    --accent-dark: #a8583a;
+    --line: #e6e1d6;
+    --danger: #b3492f;
+    --record: #d1543a;
+    --radius: 16px;
+    --shadow: 0 2px 10px rgba(43,42,40,0.06), 0 10px 30px rgba(43,42,40,0.05);
+  }
+
+  *{ box-sizing: border-box; }
+
+  html, body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body{
+    min-height: 100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 24px 16px 40px;
+  }
+
+  /* Лёгкая текстура фона — тёплая бумага */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(201,112,74,0.05), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(201,112,74,0.04), transparent 45%);
+    pointer-events:none;
+    z-index:0;
+  }
+
+  .app{
+    position:relative;
+    z-index:1;
+    width:100%;
+    max-width: 640px;
+  }
+
+  header{
+    text-align:center;
+    margin-bottom: 20px;
+  }
+
+  header h1{
+    font-size: 1.5rem;
+    font-weight:600;
+    margin:0 0 4px;
+    letter-spacing: 0.01em;
+  }
+
+  header p{
+    margin:0;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  /* ===== КАРТОЧКА С ТЕКСТОВЫМ ПОЛЕМ ===== */
+  .card{
+    background: var(--paper);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 18px;
+    border: 1px solid var(--line);
+  }
+
+  #status-line{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin-bottom: 10px;
+    min-height: 18px;
+  }
+
+  .rec-dot{
+    width:8px; height:8px;
+    border-radius:50%;
+    background: var(--record);
+    display:none;
+  }
+  .rec-dot.active{
+    display:inline-block;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ opacity:1; transform:scale(1); }
+    50%{ opacity:0.4; transform:scale(0.7); }
+  }
+
+  #transcript{
+    width:100%;
+    min-height: 260px;
+    resize: vertical;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    font-size: 1.08rem;
+    line-height: 1.6;
+    color: var(--ink);
+    padding: 4px 2px;
+  }
+  #transcript::placeholder{
+    color: #b8b3a8;
+  }
+
+  .interim{
+    color: #a39d8f;
+    font-style: italic;
+  }
+
+  .meta-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--line);
+    margin-top: 10px;
+    padding-top: 8px;
+  }
+
+  /* ===== КНОПКИ ===== */
+  .controls{
+    margin-top: 18px;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  button{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+  button:active{ transform: scale(0.97); }
+
+  #record-btn{
+    grid-column: 1 / -1;
+    background: var(--accent);
+    color: #fff;
+    padding: 16px;
+    font-size: 1rem;
+    box-shadow: 0 6px 16px rgba(201,112,74,0.35);
+  }
+  #record-btn:hover{ background: var(--accent-dark); }
+  #record-btn.recording{
+    background: var(--record);
+    box-shadow: 0 6px 16px rgba(209,84,58,0.35);
+  }
+
+  #copy-btn{
+    background: var(--ink);
+    color: #fff;
+    grid-column: 1 / -1;
+  }
+  #copy-btn:hover{ opacity:0.9; }
+
+  #download-btn{
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  #download-btn:hover{ background:#faf8f3; }
+
+  #clear-btn{
+    background: var(--paper);
+    color: var(--danger);
+    border: 1px solid var(--line);
+  }
+  #clear-btn:hover{ background:#fbf2ee; }
+
+  button:disabled{
+    opacity:0.45;
+    cursor:not-allowed;
+  }
+
+  /* ===== УВЕДОМЛЕНИЯ / ОШИБКИ ===== */
+  #toast{
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.85rem;
+    opacity:0;
+    pointer-events:none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 10;
+  }
+  #toast.show{
+    opacity:1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  #error-banner{
+    display:none;
+    background: #fbf2ee;
+    border: 1px solid #e8c9bd;
+    color: var(--danger);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.85rem;
+    line-height:1.5;
+    margin-bottom: 14px;
+  }
+  #error-banner.show{ display:block; }
+
+  #context-banner{
+    display:none;
+    background: #fdf8ec;
+    border: 1px solid #e4d6b4;
+    color: #6b5a2e;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.82rem;
+    line-height:1.55;
+    margin-bottom: 14px;
+  }
+  #context-banner.show{ display:block; }
+  #context-banner b{ color:#4d411f; }
+  #context-banner code{
+    background:#f2ead6;
+    padding:1px 5px;
+    border-radius:5px;
+    font-size:0.95em;
+  }
+
+  #unsupported-screen{
+    display:none;
+    background: var(--paper);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+    padding: 28px 22px;
+    text-align:center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  #unsupported-screen h2{
+    font-family: 'Georgia', serif;
+    margin-top:0;
+  }
+  #unsupported-screen p{
+    color: var(--ink-soft);
+    font-size:0.92rem;
+    line-height:1.6;
+  }
+
+  @media (max-width: 420px){
+    header h1{ font-size:1.3rem; }
+    #transcript{ font-size:1rem; min-height:220px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>Голос в текст</h1>
+    <p>Надиктуйте мысль — отредактируйте — скопируйте</p>
+  </header>
+
+  <!-- Экран для браузеров без поддержки Web Speech API (в т.ч. iOS Safari) -->
+  <div id="unsupported-screen">
+    <h2>Диктовка недоступна в этом браузере</h2>
+    <p id="unsupported-text"></p>
+  </div>
+
+  <!-- Основной интерфейс -->
+  <div id="main-ui">
+    <div id="context-banner"></div>
+    <div id="error-banner"></div>
+
+    <div class="card">
+      <div id="status-line">
+        <span class="rec-dot" id="rec-dot"></span>
+        <span id="status-text">Готово к записи</span>
+      </div>
+
+      <textarea id="transcript" placeholder="Нажмите «Начать запись» и говорите — текст появится здесь..."></textarea>
+
+      <div class="meta-row">
+        <span id="char-count">0 символов</span>
+        <span id="word-count">0 слов</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="record-btn">
+        <span id="record-btn-icon">●</span>
+        <span id="record-btn-label">Начать запись</span>
+      </button>
+      <button id="copy-btn">Копировать текст</button>
+      <button id="download-btn">Скачать TXT</button>
+      <button id="clear-btn">Очистить</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+   ГОЛОС В ТЕКСТ — логика приложения
+   Разделы:
+   1. Ссылки на DOM-элементы
+   2. Проверка поддержки Web Speech API
+   3. Инициализация распознавания речи
+   4. Обработчики событий распознавания (result, end, error)
+   5. Управление записью (старт/стоп) + автоперезапуск
+   6. Работа с текстовым полем (счётчики, автосохранение)
+   7. Кнопки: копировать, скачать, очистить
+   8. Вспомогательные функции (toast, ошибки)
+   ========================================================= */
+
+/* ---------- 1. DOM-элементы ---------- */
+const mainUI          = document.getElementById('main-ui');
+const unsupportedBox   = document.getElementById('unsupported-screen');
+const unsupportedText  = document.getElementById('unsupported-text');
+
+const recordBtn        = document.getElementById('record-btn');
+const recordBtnLabel   = document.getElementById('record-btn-label');
+const recordBtnIcon    = document.getElementById('record-btn-icon');
+const copyBtn          = document.getElementById('copy-btn');
+const downloadBtn      = document.getElementById('download-btn');
+const clearBtn         = document.getElementById('clear-btn');
+
+const transcriptEl     = document.getElementById('transcript');
+const statusText       = document.getElementById('status-text');
+const recDot           = document.getElementById('rec-dot');
+const charCountEl      = document.getElementById('char-count');
+const wordCountEl      = document.getElementById('word-count');
+const errorBanner      = document.getElementById('error-banner');
+const contextBanner    = document.getElementById('context-banner');
+const toast            = document.getElementById('toast');
+
+/* ---------- 2. Проверка поддержки Web Speech API ---------- */
+const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+// Отдельно определяем iOS, чтобы дать точное объяснение,
+// так как там API отсутствует полностью во всех браузерах (включая Chrome/Firefox на iOS,
+// поскольку они используют WebKit-движок Safari).
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+if (!SpeechRecognitionAPI) {
+  mainUI.style.display = 'none';
+  unsupportedBox.style.display = 'block';
+
+  if (isIOS) {
+    unsupportedText.textContent =
+      'На устройствах iOS (iPhone/iPad) браузеры не поддерживают Web Speech API — ' +
+      'это ограничение движка WebKit, от Apple, и оно действует во всех браузерах на iOS, ' +
+      'включая Chrome и Firefox для iOS. Откройте эту страницу на компьютере ' +
+      'или на Android-устройстве в браузере Chrome, чтобы воспользоваться диктовкой.';
+  } else {
+    unsupportedText.textContent =
+      'Похоже, ваш браузер не поддерживает распознавание речи через Web Speech API. ' +
+      'Попробуйте открыть страницу в последней версии Chrome или Edge на компьютере или Android.';
+  }
+}
+
+/* ---------- 2b. Откуда открыта страница ----------
+   Браузер запоминает разрешение на микрофон только для «защищённого источника»:
+   https://... либо localhost. Страница, открытая как file:///... или по http://,
+   получает временное разрешение — и спрашивает заново при каждом запуске записи.
+   Это правило безопасности браузера, отключить его со стороны страницы нельзя. */
+const isFileProtocol = location.protocol === 'file:';
+const isSecure = window.isSecureContext;   // true для https и localhost
+
+if (!isSecure) {
+  contextBanner.classList.add('show');
+  contextBanner.innerHTML = isFileProtocol
+    ? '<b>Страница открыта как файл</b> (<code>file://</code>). В этом режиме браузер ' +
+      'не запоминает разрешение на микрофон и будет спрашивать его при каждом запуске записи. ' +
+      'Чтобы разрешение сохранялось, откройте страницу по адресу <code>https://…</code> ' +
+      'или с локального сервера на <code>localhost</code>.'
+    : '<b>Соединение не защищено</b> (<code>' + location.protocol + '//</code>). Разрешение на микрофон ' +
+      'не сохраняется между запусками. Откройте ту же страницу по <code>https://</code> — ' +
+      'тогда доступ спросят один раз.';
+}
+
+/* Состояние разрешения: 'granted' | 'denied' | 'prompt' | 'unknown' */
+let micPermission = 'unknown';
+
+async function refreshPermissionState() {
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      micPermission = status.state;
+      status.onchange = () => { micPermission = status.state; };
+    }
+  } catch (e) {
+    // Firefox и часть браузеров не поддерживают запрос статуса микрофона — это нормально
+    micPermission = 'unknown';
+  }
+}
+
+/* Запрашиваем доступ один раз явно и сразу отпускаем поток.
+   На https после первого «Разрешить» браузер запомнит выбор,
+   и распознавание дальше стартует без диалога. */
+async function ensureMicPermission() {
+  if (micPermission === 'granted') return true;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return true; // старый браузер — пусть распознавание пробует само
+  }
+
+  try {
+    statusText.textContent = 'Запрашиваю доступ к микрофону…';
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(track => track.stop()); // держать поток открытым не нужно
+    micPermission = 'granted';
+    hideError();
+    return true;
+  } catch (e) {
+    micPermission = 'denied';
+    stopRecordingUI();
+    if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+      showError(
+        'Браузер не дал доступ к микрофону для этой страницы. Нажмите на значок замка ' +
+        '(или ползунков) слева от адреса → «Микрофон» → «Разрешить», затем обновите страницу. ' +
+        'Системные настройки микрофона и разрешение для сайта — это разные вещи.'
+      );
+    } else if (e && e.name === 'NotFoundError') {
+      showError('Микрофон не найден. Проверьте, что устройство подключено и выбрано в настройках системы.');
+    } else {
+      showError('Не удалось получить доступ к микрофону (' + (e && e.name ? e.name : 'ошибка') + ').');
+    }
+    return false;
+  }
+}
+
+/* ---------- 3. Инициализация распознавания речи ---------- */
+let recognition = null;
+let isRecording = false;          // пользователь удерживает состояние "запись включена"
+let shouldAutoRestart = false;    // отличаем "остановлено пользователем" от "прервано браузером"
+let restartAttempts = 0;          // сколько раз подряд пытались возобновить прерванную запись
+let finalTranscript = '';         // накопленный финальный текст с начала текущей сессии записи
+let interimSpan = null;           // ссылка на элемент с промежуточным текстом (эмулируется в textarea)
+
+if (SpeechRecognitionAPI) {
+  recognition = new SpeechRecognitionAPI();
+  recognition.lang = 'ru-RU';        // язык по умолчанию — русский
+  recognition.continuous = true;     // не останавливаться после первой фразы
+  recognition.interimResults = true; // получать промежуточные результаты по мере речи
+}
+
+/* ---------- 4. Обработчики событий распознавания ---------- */
+if (recognition) {
+
+  recognition.onresult = (event) => {
+    restartAttempts = 0; // речь идёт — цепочка неудачных перезапусков прервана
+    let interim = '';
+    let newlyFinal = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      const text = result[0].transcript;
+      if (result.isFinal) {
+        newlyFinal += text;
+      } else {
+        interim += text;
+      }
+    }
+
+    if (newlyFinal) {
+      // Добавляем финальный кусок к уже сохранённому тексту в поле
+      const base = transcriptEl.value.replace(/\s*$/, '');
+      transcriptEl.value = (base ? base + ' ' : '') + newlyFinal.trim() + ' ';
+    }
+
+    // Промежуточный текст показываем как временную подсказку в placeholder-подобном виде.
+    // Так как textarea не поддерживает разноцветный текст внутри,
+    // показываем interim отдельной строкой в статусе, чтобы не путать с финальным текстом.
+    if (interim) {
+      statusText.textContent = 'Распознаётся: ' + interim.trim();
+    } else if (isRecording) {
+      statusText.textContent = 'Идёт запись — говорите';
+    }
+
+    updateCounters();
+    saveToLocalStorage();
+  };
+
+  recognition.onend = () => {
+    if (!shouldAutoRestart) {
+      stopRecordingUI();
+      return;
+    }
+
+    // Браузер сам прервал распознавание (обычно по внутреннему таймауту молчания),
+    // а пользователь «Стоп» не нажимал — возобновляем незаметно.
+    // Мгновенный recognition.start() внутри onend часто падает с InvalidStateError,
+    // поэтому даём движку небольшую паузу и ограничиваем число попыток подряд.
+    if (restartAttempts >= 5) {
+      shouldAutoRestart = false;
+      stopRecordingUI();
+      showError('Запись несколько раз подряд прерывалась и не возобновилась. Текст сохранён — нажмите «Начать запись» ещё раз.');
+      return;
+    }
+
+    restartAttempts++;
+    setTimeout(() => {
+      if (!shouldAutoRestart) return;
+      try {
+        recognition.start();
+        statusText.textContent = 'Идёт запись — говорите';
+      } catch (e) {
+        if (e && e.name === 'InvalidStateError') return; // распознавание уже идёт
+        shouldAutoRestart = false;
+        stopRecordingUI();
+        showError('Запись прервалась и не смогла возобновиться автоматически. Нажмите «Начать запись» ещё раз.');
+      }
+    }, 350);
+  };
+
+  recognition.onerror = (event) => {
+    const err = event.error;
+
+    if (err === 'not-allowed' || err === 'service-not-allowed') {
+      shouldAutoRestart = false;
+      micPermission = 'denied';
+      stopRecordingUI();
+      showError(
+        'Доступ к микрофону запрещён для этой страницы. Откройте значок замка слева от адреса → ' +
+        '«Микрофон» → «Разрешить» и обновите страницу.' +
+        (isSecure ? '' : ' Разрешение не сохранится, пока страница открыта не по https:// и не с localhost.')
+      );
+    } else if (err === 'no-speech') {
+      // Тишина — это не критично, дадим onend обработать автоперезапуск
+    } else if (err === 'audio-capture') {
+      shouldAutoRestart = false;
+      stopRecordingUI();
+      showError('Не удалось получить доступ к микрофону. Проверьте, что микрофон подключён и не используется другим приложением.');
+    } else if (err === 'network') {
+      showError('Проблема с сетью при распознавании речи. Уже надиктованный текст сохранён — попробуйте продолжить запись.');
+    } else {
+      showError('Произошла ошибка распознавания речи (' + err + '). Уже полученный текст не потерян.');
+    }
+  };
+}
+
+/* ---------- 5. Управление записью ---------- */
+async function startRecording() {
+  if (!recognition) return;
+
+  recordBtn.disabled = true;
+  const allowed = await ensureMicPermission();
+  recordBtn.disabled = false;
+  if (!allowed) return;
+
+  try {
+    finalTranscript = transcriptEl.value;
+    shouldAutoRestart = true;
+    restartAttempts = 0;
+    recognition.start();
+    isRecording = true;
+
+    recordBtn.classList.add('recording');
+    recordBtnLabel.textContent = 'Остановить';
+    recordBtnIcon.textContent = '■';
+    recDot.classList.add('active');
+    statusText.textContent = 'Идёт запись — говорите';
+    hideError();
+  } catch (e) {
+    if (e && e.name === 'InvalidStateError') {
+      isRecording = true; // распознавание уже запущено — интерфейс просто отстал
+      return;
+    }
+    showError('Не удалось запустить запись. Обновите страницу и попробуйте снова.');
+  }
+}
+
+function stopRecording() {
+  if (!recognition) return;
+  shouldAutoRestart = false; // явная остановка пользователем
+  try {
+    recognition.stop();
+  } catch (e) {
+    // на случай, если распознавание уже остановлено
+  }
+}
+
+// Приводит интерфейс в состояние "запись не идёт" — используется и при ручной,
+// и при автоматической остановке (когда авто-перезапуск невозможен).
+function stopRecordingUI() {
+  isRecording = false;
+  recordBtn.classList.remove('recording');
+  recordBtnLabel.textContent = 'Начать запись';
+  recordBtnIcon.textContent = '●';
+  recDot.classList.remove('active');
+  if (!errorBanner.classList.contains('show')) {
+    statusText.textContent = 'Готово к записи';
+  }
+  saveToLocalStorage();
+}
+
+recordBtn.addEventListener('click', () => {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+/* ---------- 6. Счётчики и автосохранение ---------- */
+function updateCounters() {
+  const text = transcriptEl.value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  charCountEl.textContent = formatCount(chars, ['символ', 'символа', 'символов']);
+  wordCountEl.textContent = formatCount(words, ['слово', 'слова', 'слов']);
+}
+
+// Простое склонение русских слов по числу (1 слово / 2 слова / 5 слов)
+function formatCount(n, forms) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  let word;
+  if (mod10 === 1 && mod100 !== 11) word = forms[0];
+  else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) word = forms[1];
+  else word = forms[2];
+  return n + ' ' + word;
+}
+
+let saveTimeout = null;
+function saveToLocalStorage() {
+  // Debounce: не пишем в LocalStorage чаще, чем раз в ~800мс
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    try {
+      localStorage.setItem('voice-to-text-draft', transcriptEl.value);
+    } catch (e) {
+      // LocalStorage может быть недоступен (приватный режим и т.п.) — не критично
+    }
+  }, 800);
+}
+
+function loadFromLocalStorage() {
+  try {
+    const saved = localStorage.getItem('voice-to-text-draft');
+    if (saved) {
+      transcriptEl.value = saved;
+      updateCounters();
+    }
+  } catch (e) {
+    // игнорируем, если LocalStorage недоступен
+  }
+}
+
+transcriptEl.addEventListener('input', () => {
+  updateCounters();
+  saveToLocalStorage();
+});
+
+/* ---------- 7. Кнопки: копировать, скачать, очистить ---------- */
+copyBtn.addEventListener('click', async () => {
+  const text = transcriptEl.value;
+  if (!text.trim()) {
+    showToast('Нечего копировать — текст пуст');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Текст скопирован');
+  } catch (e) {
+    // Фолбэк для браузеров без поддержки Clipboard API
+    transcriptEl.select();
+    document.execCommand('copy');
+    showToast('Текст скопирован');
+  }
+});
+
+downloadBtn.addEventListener('click', () => {
+  const text = transcriptEl.value;
+  if (!text.trim()) {
+    showToast('Нечего сохранять — текст пуст');
+    return;
+  }
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const filename = `voice-note-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.txt`;
+
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('Файл сохранён: ' + filename);
+});
+
+clearBtn.addEventListener('click', () => {
+  if (!transcriptEl.value.trim()) return;
+  const confirmed = confirm('Очистить весь текст? Это действие нельзя отменить.');
+  if (confirmed) {
+    transcriptEl.value = '';
+    updateCounters();
+    saveToLocalStorage();
+    showToast('Текст очищен');
+  }
+});
+
+/* ---------- 8. Вспомогательные функции ---------- */
+let toastTimeout = null;
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2200);
+}
+
+function showError(message) {
+  errorBanner.textContent = message;
+  errorBanner.classList.add('show');
+}
+
+function hideError() {
+  errorBanner.classList.remove('show');
+  errorBanner.textContent = '';
+}
+
+/* ---------- Инициализация при загрузке страницы ---------- */
+window.addEventListener('DOMContentLoaded', () => {
+  loadFromLocalStorage();
+  updateCounters();
+  refreshPermissionState();
+});
+</script>
+
+</body>
+</html>
